@@ -1,0 +1,722 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { renderHook, act, waitFor } from "@testing-library/react";
+import { useSwap } from "../useSwap";
+import { useSwapStore } from "@/stores/swap.store";
+import { useWalletStore } from "@/stores/wallet.store";
+import { jupiter } from "@/services/jupiter";
+import { helius } from "@/services/helius";
+import { jito } from "@/services/jito";
+import { PublicKey } from "@solana/web3.js";
+import toast from "react-hot-toast";
+import * as useWalletModule from "@/hooks/useWallet";
+import * as turnkeyModule from "@turnkey/react-wallet-kit";
+
+// Mock dependencies
+vi.mock("@/stores/swap.store");
+vi.mock("@/stores/wallet.store");
+vi.mock("@/services/jupiter");
+vi.mock("@/services/helius");
+vi.mock("@/services/jito");
+vi.mock("@/hooks/useWallet");
+vi.mock("@turnkey/react-wallet-kit");
+vi.mock("react-hot-toast");
+
+describe("useSwap", () => {
+  const mockPublicKey = new PublicKey("11111111111111111111111111111112");
+  const mockInputToken = {
+    address: "So11111111111111111111111111111111111111112",
+    symbol: "SOL",
+    name: "Solana",
+    decimals: 9,
+    logoURI: "",
+  };
+  const mockOutputToken = {
+    address: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    symbol: "USDC",
+    name: "USD Coin",
+    decimals: 6,
+    logoURI: "",
+  };
+  const mockQuote = {
+    inputMint: mockInputToken.address,
+    outputMint: mockOutputToken.address,
+    inAmount: "1000000",
+    outAmount: "950000",
+    otherAmountThreshold: "940000",
+    swapMode: "ExactIn",
+    slippageBps: 50,
+    priceImpactPct: 0.1,
+    routePlan: [],
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+
+    // Default mock implementations
+    vi.mocked(useSwapStore).mockReturnValue({
+      inputToken: mockInputToken,
+      outputToken: mockOutputToken,
+      inputAmount: "0.001",
+      outputAmount: "0.95",
+      settings: {
+        slippage: 0.5,
+        priorityFee: "Medium",
+        enableJito: true,
+        jitoBribe: 0.0001,
+      },
+      status: "idle",
+      quote: mockQuote,
+      error: undefined,
+      signature: undefined,
+      setStatus: vi.fn(),
+      setQuote: vi.fn(),
+      setError: vi.fn(),
+      setSignature: vi.fn(),
+      setOutputAmount: vi.fn(),
+      reset: vi.fn(),
+    } as any);
+
+    vi.mocked(useWalletStore).mockReturnValue({
+      publicKey: mockPublicKey,
+      connected: true,
+    } as any);
+
+    vi.mocked(jupiter.slippageToBps).mockReturnValue(50);
+    vi.mocked(jupiter.getQuote).mockResolvedValue(mockQuote);
+    vi.mocked(jupiter.buildSwapTransaction).mockResolvedValue({
+      serialize: () => new Uint8Array([1, 2, 3]),
+      signatures: [new Uint8Array(64).fill(1)],
+    } as any);
+
+    vi.mocked(helius.getPriorityFeeForLevel).mockResolvedValue(10000);
+    vi.mocked(helius.simulateTransaction).mockResolvedValue(200000);
+    vi.mocked(helius.getRecentBlockhash).mockResolvedValue({
+      blockhash: "test-blockhash",
+      lastValidBlockHeight: 123456,
+    });
+    vi.mocked(helius.getTransactionStatus).mockResolvedValue({
+      confirmed: true,
+      error: undefined,
+    });
+
+    vi.mocked(jito.shouldUseJito).mockReturnValue(true);
+    vi.mocked(jito.createTipInstruction).mockReturnValue({} as any);
+    vi.mocked(jito.sendBundle).mockResolvedValue("test-bundle-id");
+    vi.mocked(jito.getBundleStatus).mockResolvedValue({
+      landed: true,
+      error: undefined,
+    });
+
+    vi.mocked(toast.loading).mockReturnValue("toast-id");
+    vi.mocked(toast.success).mockReturnValue("toast-id");
+    vi.mocked(toast.error).mockReturnValue("toast-id");
+
+    // Mock useWallet hook
+    vi.mocked(useWalletModule.useWallet).mockReturnValue({
+      refreshBalance: vi.fn().mockResolvedValue(undefined),
+      connected: true,
+      publicKey: mockPublicKey,
+      address: mockPublicKey.toBase58(),
+      balance: 1,
+      usdcBalance: 0,
+      connect: vi.fn(),
+      disconnect: vi.fn(),
+      connectWalletAfterAuth: vi.fn(),
+      createSolanaWallet: vi.fn(),
+    } as any);
+
+    // Mock useTurnkey hook
+    vi.mocked(turnkeyModule.useTurnkey).mockReturnValue({
+      signTransaction: vi.fn().mockResolvedValue({ signedTransaction: "0100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000800100010200000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001010200000c02000000e80300000000000000" }),
+      refreshWallets: vi.fn().mockResolvedValue([]),
+      user: null,
+      httpClient: null,
+      handleGoogleOauth: vi.fn(),
+      authIframeClient: null,
+      getActiveClient: vi.fn(),
+    } as any);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  describe("fetchQuote", () => {
+    it("should fetch quote successfully", async () => {
+      const { result } = renderHook(() => useSwap());
+
+      await act(async () => {
+        await result.current.fetchQuote();
+      });
+
+      expect(jupiter.getQuote).toHaveBeenCalledWith(
+        mockInputToken.address,
+        mockOutputToken.address,
+        1000000, // 0.001 SOL * 10^9
+        50 // slippage bps
+      );
+
+      expect(useSwapStore().setQuote).toHaveBeenCalledWith(mockQuote);
+      expect(useSwapStore().setOutputAmount).toHaveBeenCalled();
+      expect(useSwapStore().setStatus).toHaveBeenCalledWith("idle");
+    });
+
+    it("should not fetch quote when input amount is invalid", async () => {
+      vi.mocked(useSwapStore).mockReturnValue({
+        ...useSwapStore(),
+        inputAmount: "0",
+      } as any);
+
+      const { result } = renderHook(() => useSwap());
+
+      await act(async () => {
+        await result.current.fetchQuote();
+      });
+
+      expect(jupiter.getQuote).not.toHaveBeenCalled();
+    });
+
+    it("should not fetch quote when tokens are missing", async () => {
+      vi.mocked(useSwapStore).mockReturnValue({
+        ...useSwapStore(),
+        inputToken: null,
+        outputToken: null,
+      } as any);
+
+      const { result } = renderHook(() => useSwap());
+
+      await act(async () => {
+        await result.current.fetchQuote();
+      });
+
+      expect(jupiter.getQuote).not.toHaveBeenCalled();
+    });
+
+    it("should handle quote fetch error", async () => {
+      const mockError = new Error("Quote API failed");
+      vi.mocked(jupiter.getQuote).mockRejectedValue(mockError);
+
+      const { result } = renderHook(() => useSwap());
+
+      await act(async () => {
+        await result.current.fetchQuote();
+      });
+
+      expect(useSwapStore().setError).toHaveBeenCalledWith("Quote API failed");
+      expect(useSwapStore().setStatus).toHaveBeenCalledWith("error");
+    });
+
+    it("should retry quote fetch with exponential backoff", async () => {
+      vi.mocked(jupiter.getQuote)
+        .mockRejectedValueOnce(new Error("Network error"))
+        .mockRejectedValueOnce(new Error("Network error"))
+        .mockResolvedValueOnce(mockQuote);
+
+      const { result } = renderHook(() => useSwap());
+
+      await act(async () => {
+        await result.current.fetchQuote();
+      });
+
+      // Should retry 3 times total
+      expect(jupiter.getQuote).toHaveBeenCalledTimes(3);
+      expect(useSwapStore().setQuote).toHaveBeenCalledWith(mockQuote);
+    });
+
+    it("should abort previous quote fetch when fetching new quote", async () => {
+      const { result } = renderHook(() => useSwap());
+
+      // Start first fetch (don't await)
+      act(() => {
+        result.current.fetchQuote();
+      });
+
+      // Start second fetch immediately
+      await act(async () => {
+        await result.current.fetchQuote();
+      });
+
+      // Only the second fetch should complete
+      expect(jupiter.getQuote).toHaveBeenCalled();
+    });
+  });
+
+  describe("executeSwap - Jito Flow", () => {
+    it("should execute swap successfully via Jito", async () => {
+      const mockSignTransaction = vi.fn().mockResolvedValue({
+        signedTransaction: "0100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000800100010200000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001010200000c02000000e80300000000000000",
+      });
+      const mockRefreshWallets = vi.fn().mockResolvedValue([
+        {
+          accounts: [
+            {
+              addressFormat: "ADDRESS_FORMAT_SOLANA",
+              address: mockPublicKey.toBase58(),
+            },
+          ],
+        },
+      ]);
+      const mockRefreshBalance = vi.fn().mockResolvedValue(undefined);
+
+      vi.mocked(turnkeyModule.useTurnkey).mockReturnValue({
+        ...vi.mocked(turnkeyModule.useTurnkey)(),
+        signTransaction: mockSignTransaction,
+        refreshWallets: mockRefreshWallets,
+      });
+
+      vi.mocked(useWalletModule.useWallet).mockReturnValue({
+        ...vi.mocked(useWalletModule.useWallet)(),
+        refreshBalance: mockRefreshBalance,
+      });
+
+      const { result } = renderHook(() => useSwap());
+
+      await act(async () => {
+        await result.current.executeSwap();
+      });
+
+      // Verify status transitions
+      expect(useSwapStore().setStatus).toHaveBeenCalledWith("building-transaction");
+      expect(useSwapStore().setStatus).toHaveBeenCalledWith("signing");
+      expect(useSwapStore().setStatus).toHaveBeenCalledWith("submitting");
+      expect(useSwapStore().setStatus).toHaveBeenCalledWith("confirming");
+      expect(useSwapStore().setStatus).toHaveBeenCalledWith("success");
+
+      // Verify Jito bundle flow
+      expect(jito.shouldUseJito).toHaveBeenCalledWith(true, 0.0001);
+      expect(jito.createTipInstruction).toHaveBeenCalled();
+      expect(jito.sendBundle).toHaveBeenCalled();
+      expect(jito.getBundleStatus).toHaveBeenCalledWith("test-bundle-id");
+
+      // Verify success toast
+      expect(toast.success).toHaveBeenCalledWith(
+        expect.stringContaining("Swap completed successfully!"),
+        expect.any(Object)
+      );
+
+      // Verify balance refresh
+      expect(mockRefreshBalance).toHaveBeenCalled();
+    });
+
+    it("should fallback to Helius when Jito send fails", async () => {
+      vi.mocked(jito.sendBundle)
+        .mockRejectedValueOnce(new Error("Jito send failed"))
+        .mockRejectedValueOnce(new Error("Jito send failed"))
+        .mockRejectedValueOnce(new Error("Jito send failed"));
+
+      const mockConnection = {
+        sendRawTransaction: vi.fn().mockResolvedValue("test-signature"),
+      };
+      vi.mocked(helius.getConnection).mockReturnValue(mockConnection as any);
+
+      const mockSignTransaction = vi.fn().mockResolvedValue({
+        signedTransaction: "0100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000800100010200000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001010200000c02000000e80300000000000000",
+      });
+      const mockRefreshWallets = vi.fn().mockResolvedValue([
+        {
+          accounts: [
+            {
+              addressFormat: "ADDRESS_FORMAT_SOLANA",
+              address: mockPublicKey.toBase58(),
+            },
+          ],
+        },
+      ]);
+
+      vi.mocked(turnkeyModule.useTurnkey).mockReturnValue({
+        ...vi.mocked(turnkeyModule.useTurnkey)(),
+        signTransaction: mockSignTransaction,
+        refreshWallets: mockRefreshWallets,
+      });
+
+      const { result } = renderHook(() => useSwap());
+
+      await act(async () => {
+        await result.current.executeSwap();
+      });
+
+      // Should try Jito 3 times
+      expect(jito.sendBundle).toHaveBeenCalledTimes(3);
+
+      // Should fall back to Helius
+      expect(mockConnection.sendRawTransaction).toHaveBeenCalled();
+      expect(helius.getTransactionStatus).toHaveBeenCalled();
+
+      // Should show fallback toast
+      expect(toast.loading).toHaveBeenCalledWith(
+        expect.stringContaining("Jito unavailable"),
+        expect.any(Object)
+      );
+    });
+
+    it("should fallback to Helius when Jito rate limited (429)", async () => {
+      vi.mocked(jito.getBundleStatus).mockResolvedValue({
+        landed: false,
+        error: "Request failed with status code 429",
+      });
+
+      const mockConnection = {
+        sendRawTransaction: vi.fn().mockResolvedValue("test-signature"),
+      };
+      vi.mocked(helius.getConnection).mockReturnValue(mockConnection as any);
+
+      const mockSignTransaction = vi.fn().mockResolvedValue({
+        signedTransaction: "0100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000800100010200000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001010200000c02000000e80300000000000000",
+      });
+      const mockRefreshWallets = vi.fn().mockResolvedValue([
+        {
+          accounts: [
+            {
+              addressFormat: "ADDRESS_FORMAT_SOLANA",
+              address: mockPublicKey.toBase58(),
+            },
+          ],
+        },
+      ]);
+
+      vi.mocked(turnkeyModule.useTurnkey).mockReturnValue({
+        ...vi.mocked(turnkeyModule.useTurnkey)(),
+        signTransaction: mockSignTransaction,
+        refreshWallets: mockRefreshWallets,
+      });
+
+      const { result } = renderHook(() => useSwap());
+
+      await act(async () => {
+        await result.current.executeSwap();
+      });
+
+      // Should detect rate limiting and fall back to Helius
+      expect(helius.getTransactionStatus).toHaveBeenCalled();
+      expect(toast.loading).toHaveBeenCalledWith(
+        expect.stringContaining("Jito rate limited"),
+        expect.any(Object)
+      );
+    });
+  });
+
+  describe("executeSwap - Helius Flow", () => {
+    it("should execute swap successfully via Helius when Jito disabled", async () => {
+      vi.mocked(jito.shouldUseJito).mockReturnValue(false);
+
+      const mockConnection = {
+        sendRawTransaction: vi.fn().mockResolvedValue("test-signature"),
+      };
+      vi.mocked(helius.getConnection).mockReturnValue(mockConnection as any);
+
+      const mockSignTransaction = vi.fn().mockResolvedValue({
+        signedTransaction: "0100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000800100010200000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001010200000c02000000e80300000000000000",
+      });
+      const mockRefreshWallets = vi.fn().mockResolvedValue([
+        {
+          accounts: [
+            {
+              addressFormat: "ADDRESS_FORMAT_SOLANA",
+              address: mockPublicKey.toBase58(),
+            },
+          ],
+        },
+      ]);
+
+      vi.mocked(turnkeyModule.useTurnkey).mockReturnValue({
+        ...vi.mocked(turnkeyModule.useTurnkey)(),
+        signTransaction: mockSignTransaction,
+        refreshWallets: mockRefreshWallets,
+      });
+
+      const { result } = renderHook(() => useSwap());
+
+      await act(async () => {
+        await result.current.executeSwap();
+      });
+
+      // Should NOT use Jito
+      expect(jito.sendBundle).not.toHaveBeenCalled();
+      expect(jito.getBundleStatus).not.toHaveBeenCalled();
+
+      // Should use Helius directly
+      expect(mockConnection.sendRawTransaction).toHaveBeenCalled();
+      expect(helius.getTransactionStatus).toHaveBeenCalled();
+
+      expect(useSwapStore().setStatus).toHaveBeenCalledWith("success");
+    });
+
+    it("should handle transaction confirmation timeout", async () => {
+      vi.mocked(jito.shouldUseJito).mockReturnValue(false);
+      vi.mocked(helius.getTransactionStatus).mockResolvedValue({
+        confirmed: false,
+        error: undefined,
+      });
+
+      const mockConnection = {
+        sendRawTransaction: vi.fn().mockResolvedValue("test-signature"),
+      };
+      vi.mocked(helius.getConnection).mockReturnValue(mockConnection as any);
+
+      const mockSignTransaction = vi.fn().mockResolvedValue({
+        signedTransaction: "0100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000800100010200000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001010200000c02000000e80300000000000000",
+      });
+      const mockRefreshWallets = vi.fn().mockResolvedValue([
+        {
+          accounts: [
+            {
+              addressFormat: "ADDRESS_FORMAT_SOLANA",
+              address: mockPublicKey.toBase58(),
+            },
+          ],
+        },
+      ]);
+
+      vi.mocked(turnkeyModule.useTurnkey).mockReturnValue({
+        ...vi.mocked(turnkeyModule.useTurnkey)(),
+        signTransaction: mockSignTransaction,
+        refreshWallets: mockRefreshWallets,
+      });
+
+      const { result } = renderHook(() => useSwap());
+
+      await act(async () => {
+        await result.current.executeSwap();
+      });
+
+      // Should timeout and set error
+      await waitFor(() => {
+        expect(useSwapStore().setError).toHaveBeenCalledWith(
+          expect.stringContaining("Transaction timeout")
+        );
+      });
+    });
+  });
+
+  describe("executeSwap - Error Handling", () => {
+    it("should handle missing wallet connection", async () => {
+      vi.mocked(useWalletStore).mockReturnValue({
+        publicKey: null,
+        connected: false,
+      } as any);
+
+      const { result } = renderHook(() => useSwap());
+
+      await act(async () => {
+        await result.current.executeSwap();
+      });
+
+      expect(toast.error).toHaveBeenCalledWith("Missing requirements for swap");
+      expect(jupiter.buildSwapTransaction).not.toHaveBeenCalled();
+    });
+
+    it("should handle missing quote", async () => {
+      vi.mocked(useSwapStore).mockReturnValue({
+        ...useSwapStore(),
+        quote: null,
+      } as any);
+
+      const { result } = renderHook(() => useSwap());
+
+      await act(async () => {
+        await result.current.executeSwap();
+      });
+
+      expect(toast.error).toHaveBeenCalledWith("Missing requirements for swap");
+    });
+
+    it("should handle Turnkey not ready", async () => {
+      vi.mocked(turnkeyModule.useTurnkey).mockReturnValue({
+        ...vi.mocked(turnkeyModule.useTurnkey)(),
+        signTransaction: undefined,
+        refreshWallets: undefined,
+      });
+
+      const { result } = renderHook(() => useSwap());
+
+      await act(async () => {
+        await result.current.executeSwap();
+      });
+
+      expect(useSwapStore().setError).toHaveBeenCalledWith(
+        expect.stringContaining("Turnkey not ready")
+      );
+      expect(useSwapStore().setStatus).toHaveBeenCalledWith("error");
+    });
+
+    it("should handle no Solana wallet account found", async () => {
+      const mockSignTransaction = vi.fn();
+      const mockRefreshWallets = vi.fn().mockResolvedValue([
+        {
+          accounts: [
+            {
+              addressFormat: "ADDRESS_FORMAT_ETHEREUM", // Wrong format
+              address: "0x123",
+            },
+          ],
+        },
+      ]);
+
+      vi.mocked(turnkeyModule.useTurnkey).mockReturnValue({
+        ...vi.mocked(turnkeyModule.useTurnkey)(),
+        signTransaction: mockSignTransaction,
+        refreshWallets: mockRefreshWallets,
+      });
+
+      const { result } = renderHook(() => useSwap());
+
+      await act(async () => {
+        await result.current.executeSwap();
+      });
+
+      expect(useSwapStore().setError).toHaveBeenCalledWith(
+        expect.stringContaining("No Solana wallet account found")
+      );
+    });
+
+    it("should handle transaction signing failure", async () => {
+      const mockSignTransaction = vi
+        .fn()
+        .mockRejectedValue(new Error("Signing failed"));
+      const mockRefreshWallets = vi.fn().mockResolvedValue([
+        {
+          accounts: [
+            {
+              addressFormat: "ADDRESS_FORMAT_SOLANA",
+              address: mockPublicKey.toBase58(),
+            },
+          ],
+        },
+      ]);
+
+      vi.mocked(turnkeyModule.useTurnkey).mockReturnValue({
+        ...vi.mocked(turnkeyModule.useTurnkey)(),
+        signTransaction: mockSignTransaction,
+        refreshWallets: mockRefreshWallets,
+      });
+
+      const { result } = renderHook(() => useSwap());
+
+      await act(async () => {
+        await result.current.executeSwap();
+      });
+
+      expect(useSwapStore().setError).toHaveBeenCalledWith(
+        expect.stringContaining("Signing failed")
+      );
+      expect(useSwapStore().setStatus).toHaveBeenCalledWith("error");
+    });
+
+    it("should handle transaction confirmation error", async () => {
+      vi.mocked(jito.shouldUseJito).mockReturnValue(false);
+      vi.mocked(helius.getTransactionStatus).mockResolvedValue({
+        confirmed: false,
+        error: "Transaction failed: Insufficient funds",
+      });
+
+      const mockConnection = {
+        sendRawTransaction: vi.fn().mockResolvedValue("test-signature"),
+      };
+      vi.mocked(helius.getConnection).mockReturnValue(mockConnection as any);
+
+      const mockSignTransaction = vi.fn().mockResolvedValue({
+        signedTransaction: "0100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000800100010200000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001010200000c02000000e80300000000000000",
+      });
+      const mockRefreshWallets = vi.fn().mockResolvedValue([
+        {
+          accounts: [
+            {
+              addressFormat: "ADDRESS_FORMAT_SOLANA",
+              address: mockPublicKey.toBase58(),
+            },
+          ],
+        },
+      ]);
+
+      vi.mocked(turnkeyModule.useTurnkey).mockReturnValue({
+        ...vi.mocked(turnkeyModule.useTurnkey)(),
+        signTransaction: mockSignTransaction,
+        refreshWallets: mockRefreshWallets,
+      });
+
+      const { result } = renderHook(() => useSwap());
+
+      await act(async () => {
+        await result.current.executeSwap();
+      });
+
+      expect(useSwapStore().setError).toHaveBeenCalledWith(
+        "Transaction failed: Insufficient funds"
+      );
+    });
+  });
+
+  describe("reset", () => {
+    it("should reset swap state", () => {
+      const { result } = renderHook(() => useSwap());
+
+      act(() => {
+        result.current.reset();
+      });
+
+      expect(useSwapStore().reset).toHaveBeenCalled();
+    });
+  });
+
+  describe("useEffect - Auto Quote Fetching", () => {
+    it("should automatically fetch quote after 500ms delay", async () => {
+      vi.useFakeTimers();
+
+      const { result } = renderHook(() => useSwap());
+
+      act(() => {
+        vi.advanceTimersByTime(500);
+      });
+
+      await waitFor(() => {
+        expect(jupiter.getQuote).toHaveBeenCalled();
+      });
+
+      vi.useRealTimers();
+    });
+
+    it("should debounce quote fetching when input changes rapidly", async () => {
+      vi.useFakeTimers();
+
+      const { rerender } = renderHook(() => useSwap());
+
+      // Simulate rapid input changes
+      vi.mocked(useSwapStore).mockReturnValue({
+        ...useSwapStore(),
+        inputAmount: "0.001",
+      } as any);
+      rerender();
+
+      act(() => {
+        vi.advanceTimersByTime(250);
+      });
+
+      vi.mocked(useSwapStore).mockReturnValue({
+        ...useSwapStore(),
+        inputAmount: "0.002",
+      } as any);
+      rerender();
+
+      act(() => {
+        vi.advanceTimersByTime(250);
+      });
+
+      vi.mocked(useSwapStore).mockReturnValue({
+        ...useSwapStore(),
+        inputAmount: "0.003",
+      } as any);
+      rerender();
+
+      act(() => {
+        vi.advanceTimersByTime(500);
+      });
+
+      // Should only fetch once (debounced)
+      await waitFor(() => {
+        expect(jupiter.getQuote).toHaveBeenCalledTimes(1);
+      });
+
+      vi.useRealTimers();
+    });
+  });
+});
