@@ -4,13 +4,6 @@
   "installCommand": "npm install",
   "framework": "nextjs",
   "outputDirectory": ".next",
-  "env": {
-    "NEXT_PUBLIC_TURNKEY_API_BASE_URL": "@turnkey-api-base-url",
-    "NEXT_PUBLIC_TURNKEY_ORGANIZATION_ID": "@turnkey-organization-id",
-    "NEXT_PUBLIC_HELIUS_API_KEY": "@helius-api-key",
-    "NEXT_PUBLIC_RPC_URL": "@rpc-url",
-    "NEXT_PUBLIC_SOLANA_NETWORK": "mainnet-beta"
-  },
   "headers": [
     {
       "source": "/(.*)",
