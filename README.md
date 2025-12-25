@@ -2,6 +2,12 @@
 
 A lightning-fast Solana token swap interface powered by Jupiter, Turnkey, and Helius. Built with performance in mind - **1.79s best swap time** beats all major DEX aggregators.
 
+## 🌐 Live Demo
+
+**Production**: [https://solana-swap-modal.vercel.app](https://solana-swap-modal.vercel.app)
+
+Try the swap modal live! Connect with Google OAuth and start swapping SOL ↔ USDC instantly.
+
 ## 🚀 Features
 
 - **⚡ Lightning Fast**: 1.79s best execution time (Quote → Build → Sign → Submit → Confirm)
