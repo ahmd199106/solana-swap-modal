@@ -582,8 +582,8 @@ describe("useSwap", () => {
     it("should handle Turnkey not ready", async () => {
       vi.mocked(turnkeyModule.useTurnkey).mockReturnValue({
         ...vi.mocked(turnkeyModule.useTurnkey)(),
-        signTransaction: undefined,
-        refreshWallets: undefined,
+        signTransaction: undefined as any,
+        refreshWallets: undefined as any,
       });
 
       const { result } = renderHook(() => useSwap());

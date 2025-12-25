@@ -74,7 +74,7 @@ describe("JitoService", () => {
         },
       };
 
-      mockedAxios.post.mockResolvedValueOnce(mockResponse);
+      (mockedAxios.post as any).mockResolvedValueOnce(mockResponse);
 
       // Create mock transactions
       const mockTx1 = new Uint8Array([1, 2, 3, 4]);
@@ -110,7 +110,7 @@ describe("JitoService", () => {
 
     it("should handle single transaction in bundle", async () => {
       const mockBundleId = "single-tx-bundle";
-      mockedAxios.post.mockResolvedValueOnce({
+      (mockedAxios.post as any).mockResolvedValueOnce({
         data: { result: mockBundleId },
       });
 
@@ -125,7 +125,7 @@ describe("JitoService", () => {
     });
 
     it("should throw error on API failure", async () => {
-      mockedAxios.post.mockRejectedValueOnce(
+      (mockedAxios.post as any).mockRejectedValueOnce(
         new Error("Network error")
       );
 
@@ -145,7 +145,7 @@ describe("JitoService", () => {
         data: { error: "Too many requests" },
       };
 
-      mockedAxios.post.mockRejectedValueOnce(error);
+      (mockedAxios.post as any).mockRejectedValueOnce(error);
 
       const mockTx = {
         serialize: () => new Uint8Array([1, 2, 3]),
@@ -174,7 +174,7 @@ describe("JitoService", () => {
         },
       };
 
-      mockedAxios.post.mockResolvedValueOnce(mockResponse);
+      (mockedAxios.post as any).mockResolvedValueOnce(mockResponse);
 
       const status = await jito.getBundleStatus("test-bundle-id");
 
@@ -198,7 +198,7 @@ describe("JitoService", () => {
         },
       };
 
-      mockedAxios.post.mockResolvedValueOnce(mockResponse);
+      (mockedAxios.post as any).mockResolvedValueOnce(mockResponse);
 
       const status = await jito.getBundleStatus("test-bundle-id");
 
@@ -221,7 +221,7 @@ describe("JitoService", () => {
         },
       };
 
-      mockedAxios.post.mockResolvedValueOnce(mockResponse);
+      (mockedAxios.post as any).mockResolvedValueOnce(mockResponse);
 
       const status = await jito.getBundleStatus("test-bundle-id");
 
@@ -238,7 +238,7 @@ describe("JitoService", () => {
         },
       };
 
-      mockedAxios.post.mockResolvedValueOnce(mockResponse);
+      (mockedAxios.post as any).mockResolvedValueOnce(mockResponse);
 
       const status = await jito.getBundleStatus("test-bundle-id");
 
@@ -261,7 +261,7 @@ describe("JitoService", () => {
         },
       };
 
-      mockedAxios.post.mockResolvedValueOnce(mockResponse);
+      (mockedAxios.post as any).mockResolvedValueOnce(mockResponse);
 
       const status = await jito.getBundleStatus("test-bundle-id");
 
@@ -270,7 +270,7 @@ describe("JitoService", () => {
     });
 
     it("should handle API errors gracefully", async () => {
-      mockedAxios.post.mockRejectedValueOnce(new Error("Network error"));
+      (mockedAxios.post as any).mockRejectedValueOnce(new Error("Network error"));
 
       const status = await jito.getBundleStatus("test-bundle-id");
 
@@ -285,7 +285,7 @@ describe("JitoService", () => {
         data: { error: "Too many requests" },
       };
 
-      mockedAxios.post.mockRejectedValueOnce(error);
+      (mockedAxios.post as any).mockRejectedValueOnce(error);
 
       const status = await jito.getBundleStatus("test-bundle-id");
 

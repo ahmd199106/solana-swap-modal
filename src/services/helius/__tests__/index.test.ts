@@ -76,7 +76,7 @@ describe("HeliusService", () => {
         },
       };
 
-      mockedAxios.post.mockResolvedValueOnce(mockResponse);
+      (mockedAxios.post as any).mockResolvedValueOnce(mockResponse);
 
       const fees = await helius.getPriorityFees(["test-account"]);
 
@@ -100,7 +100,7 @@ describe("HeliusService", () => {
         },
       };
 
-      mockedAxios.post.mockResolvedValueOnce(mockResponse);
+      (mockedAxios.post as any).mockResolvedValueOnce(mockResponse);
 
       const fees = await helius.getPriorityFees();
 
@@ -115,7 +115,7 @@ describe("HeliusService", () => {
     });
 
     it("should return fallback fees on API error", async () => {
-      mockedAxios.post.mockRejectedValueOnce(new Error("Network error"));
+      (mockedAxios.post as any).mockRejectedValueOnce(new Error("Network error"));
 
       const fees = await helius.getPriorityFees();
 
@@ -139,7 +139,7 @@ describe("HeliusService", () => {
         },
       };
 
-      mockedAxios.post.mockResolvedValueOnce(mockResponse);
+      (mockedAxios.post as any).mockResolvedValueOnce(mockResponse);
 
       const fees = await helius.getPriorityFees();
 
@@ -165,7 +165,7 @@ describe("HeliusService", () => {
         },
       };
 
-      mockedAxios.post.mockResolvedValueOnce(mockResponse);
+      (mockedAxios.post as any).mockResolvedValueOnce(mockResponse);
 
       const fees = await helius.getPriorityFees();
 
@@ -188,7 +188,7 @@ describe("HeliusService", () => {
         },
       };
 
-      mockedAxios.post.mockResolvedValue(mockResponse);
+      (mockedAxios.post as any).mockResolvedValue(mockResponse);
     });
 
     it("should return low priority fee", async () => {
@@ -342,7 +342,7 @@ describe("HeliusService", () => {
         value: {
           err: { InstructionError: [0, "Simulation failed"] },
           logs: ["Program log: Error"],
-          unitsConsumed: null,
+          unitsConsumed: undefined,
           accounts: null,
           returnData: null,
         },

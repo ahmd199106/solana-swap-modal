@@ -29,7 +29,7 @@ describe("useWallet", () => {
     userId: "test-user-id",
     username: "test@example.com",
     organizationId: "test-org-id",
-  };
+  } as any;
 
   const mockHttpClient = {
     getWhoami: vi.fn().mockResolvedValue({
@@ -41,7 +41,7 @@ describe("useWallet", () => {
       walletId: "test-wallet-id",
       addresses: ["test-address"],
     }),
-  };
+  } as any;
 
   const mockHandleGoogleOauth = vi.fn();
   const mockRefreshWallets = vi.fn();
@@ -135,7 +135,7 @@ describe("useWallet", () => {
     it("should handle wallet creation error when user not authenticated", async () => {
       vi.mocked(turnkeyModule.useTurnkey).mockReturnValue({
         ...vi.mocked(turnkeyModule.useTurnkey)(),
-        user: null,
+        user: null as any,
         httpClient: mockHttpClient,
         handleGoogleOauth: mockHandleGoogleOauth,
         refreshWallets: mockRefreshWallets,
@@ -152,7 +152,7 @@ describe("useWallet", () => {
       vi.mocked(turnkeyModule.useTurnkey).mockReturnValue({
         ...vi.mocked(turnkeyModule.useTurnkey)(),
         user: mockUser,
-        httpClient: null,
+        httpClient: null as any,
         handleGoogleOauth: mockHandleGoogleOauth,
         refreshWallets: mockRefreshWallets,
       });
@@ -553,7 +553,7 @@ describe("useWallet", () => {
     it("should not auto-connect when user not authenticated", () => {
       vi.mocked(turnkeyModule.useTurnkey).mockReturnValue({
         ...vi.mocked(turnkeyModule.useTurnkey)(),
-        user: null,
+        user: null as any,
         httpClient: mockHttpClient,
         handleGoogleOauth: mockHandleGoogleOauth,
         refreshWallets: mockRefreshWallets,
