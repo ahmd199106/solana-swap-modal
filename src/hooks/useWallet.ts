@@ -29,16 +29,7 @@ export function useWallet() {
   } = useWalletStore();
 
   // Get Turnkey wallet kit methods
-  const {
-    handleGoogleOauth,
-    handleDiscordOauth,
-    handleFacebookOauth,
-    handleXOauth,
-    handleAppleOauth,
-    user,
-    refreshWallets,
-    httpClient,
-  } = useTurnkey();
+  const { handleGoogleOauth, user, refreshWallets, httpClient } = useTurnkey();
 
   /**
    * Create a new Solana wallet for the authenticated user
@@ -69,17 +60,11 @@ export function useWallet() {
       const organizationId = whoami?.organizationId;
 
       if (!organizationId) {
-        console.error(
-          "❌ [ERROR] Could not get organization ID from getWhoami():",
-          whoami
-        );
+        console.error("❌ [ERROR] Could not get organization ID from getWhoami():", whoami);
         throw new Error("Organization ID not found in session");
       }
 
-      console.log(
-        "🔧 [DEBUG] Using organization ID from getWhoami():",
-        organizationId
-      );
+      console.log("🔧 [DEBUG] Using organization ID from getWhoami():", organizationId);
 
       // Create wallet with Solana account using Turnkey API
       const result = await httpClient.createWallet({
@@ -243,49 +228,29 @@ export function useWallet() {
    */
   const connect = useCallback(async () => {
     try {
-      // console.log("🔍 [DEBUG] Starting Google OAuth flow...");
-      console.log("🔍 [DEBUG] Starting Discord OAuth flow...");
-      // console.log(
-      //   "🔍 [DEBUG] Client ID:",
-      //   process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
-      // );
+      console.log("🔍 [DEBUG] Starting Google OAuth flow...");
       console.log(
         "🔍 [DEBUG] Client ID:",
-        process.env.NEXT_PUBLIC_DISCORD_CLIENT_ID
+        process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
       );
       console.log("🔍 [DEBUG] Current user before OAuth:", user);
 
-      // toast.loading("Connecting with Google...", { id: "wallet-connect" });
-      toast.loading("Connecting with Discord...", { id: "wallet-connect" });
+      toast.loading("Connecting with Google...", { id: "wallet-connect" });
 
-      //initliase discord oauth
-      await handleDiscordOauth({
-        clientId: process.env.NEXT_PUBLIC_DISCORD_CLIENT_ID!,
+      // Initiate Google OAuth flow
+      await handleGoogleOauth({
+        clientId: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID!,
         onOauthSuccess: async () => {
-          console.log("🔍 [DEBUG] Discord OAuth success callback triggered!");
-          console.log("🔍 [DEBUG] User after Discord OAuth success:", user);
+          console.log("🔍 [DEBUG] OAuth success callback triggered!");
+          console.log("🔍 [DEBUG] User after OAuth success:", user);
 
-          // After Discord OAuth success, connect the wallet
+          // After OAuth success, connect the wallet
           await connectWalletAfterAuth();
         },
         openInPage: true, // Redirect in current page
       });
 
-      // Initiate Google OAuth flow
-      // await handleGoogleOauth({
-      //   clientId: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID!,
-      //   onOauthSuccess: async () => {
-      //     console.log("🔍 [DEBUG] OAuth success callback triggered!");
-      //     console.log("🔍 [DEBUG] User after OAuth success:", user);
-
-      //     // After OAuth success, connect the wallet
-      //     await connectWalletAfterAuth();
-      //   },
-      //   openInPage: true, // Redirect in current page
-      // });
-
-      // console.log("🔍 [DEBUG] handleGoogleOauth completed");
-      console.log("🔍 [DEBUG] handleDiscordOauth completed");
+      console.log("🔍 [DEBUG] handleGoogleOauth completed");
     } catch (error) {
       console.error("❌ [ERROR] Google OAuth error:", error);
       toast.error(
@@ -296,12 +261,7 @@ export function useWallet() {
       );
       throw error;
     }
-  }, [
-    // handleGoogleOauth,
-    handleDiscordOauth,
-    connectWalletAfterAuth,
-    user,
-  ]);
+  }, [handleGoogleOauth, connectWalletAfterAuth, user]);
 
   /**
    * Disconnect wallet

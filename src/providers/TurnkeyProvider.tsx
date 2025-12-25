@@ -31,15 +31,15 @@ export function TurnkeyProvider({ children }: { children: ReactNode }) {
         authProxyConfigId: authProxyConfigId || "",
         auth: {
           methods: {
-            emailOtpAuthEnabled: true,
-            smsOtpAuthEnabled: true,
-            passkeyAuthEnabled: true,
-            walletAuthEnabled: true,
+            emailOtpAuthEnabled: false,
+            smsOtpAuthEnabled: false,
+            passkeyAuthEnabled: false,
+            walletAuthEnabled: false,
             googleOauthEnabled: true, // Enable Google OAuth
-            appleOauthEnabled: true,
-            xOauthEnabled: true,
-            discordOauthEnabled: true,
-            facebookOauthEnabled: true,
+            appleOauthEnabled: false,
+            xOauthEnabled: false,
+            discordOauthEnabled: false,
+            facebookOauthEnabled: false,
           },
         },
       }}
