@@ -376,6 +376,29 @@ class HeliusService {
           "[Sim] logs:\n",
           (simulation.value.logs || []).join("\n")
         );
+
+        // Check for insufficient lamports error
+        const logs = simulation.value.logs || [];
+        const insufficientLamportsLog = logs.find(log =>
+          log.includes("insufficient lamports")
+        );
+
+        if (insufficientLamportsLog) {
+          // Extract lamports amounts from log: "Transfer: insufficient lamports X, need Y"
+          const match = insufficientLamportsLog.match(/insufficient lamports (\d+), need (\d+)/);
+          if (match) {
+            const have = parseInt(match[1]);
+            const need = parseInt(match[2]);
+            const short = need - have;
+            throw new Error(
+              `Insufficient SOL. You have ${(have / 1e9).toFixed(6)} SOL but need ${(need / 1e9).toFixed(6)} SOL (short by ${(short / 1e9).toFixed(6)} SOL). Add at least 0.02 SOL to your wallet to cover rent and fees.`
+            );
+          }
+          throw new Error(
+            `Insufficient SOL in wallet. Add at least 0.02 SOL to cover transaction rent and fees.`
+          );
+        }
+
         throw new Error(
           `Simulation failed: ${JSON.stringify(simulation.value.err)}`
         );

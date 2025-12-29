@@ -29,7 +29,7 @@ export function useWallet() {
   } = useWalletStore();
 
   // Get Turnkey wallet kit methods
-  const { handleGoogleOauth, user, refreshWallets, httpClient } = useTurnkey();
+  const { handleGoogleOauth, user, refreshWallets, httpClient, logout } = useTurnkey();
 
   /**
    * Create a new Solana wallet for the authenticated user
@@ -264,12 +264,26 @@ export function useWallet() {
   }, [handleGoogleOauth, connectWalletAfterAuth, user]);
 
   /**
-   * Disconnect wallet
+   * Disconnect wallet and logout from Turnkey
    */
-  const disconnect = useCallback(() => {
-    disconnectStore();
-    toast.success("Wallet disconnected");
-  }, [disconnectStore]);
+  const disconnect = useCallback(async () => {
+    try {
+      // Logout from Turnkey session
+      if (logout) {
+        await logout();
+        console.log("Logged out from Turnkey");
+      }
+
+      // Clear local wallet state
+      disconnectStore();
+      toast.success("Wallet disconnected");
+    } catch (error) {
+      console.error("Logout error:", error);
+      // Still disconnect locally even if Turnkey logout fails
+      disconnectStore();
+      toast.success("Wallet disconnected");
+    }
+  }, [logout, disconnectStore]);
 
   /**
    * Refresh balance (SOL and USDC)
