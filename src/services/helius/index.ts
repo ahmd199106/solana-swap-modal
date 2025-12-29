@@ -178,6 +178,131 @@ class HeliusService {
   }
 
   /**
+   * Wait for transaction confirmation via WebSocket (real-time, no polling)
+   * Opens WebSocket → Subscribes → Waits → Closes (lifecycle: 2-5s)
+   * Free tier: ~150ms connection + real-time notification
+   * Saves ~350ms vs 1s polling + reduces RPC calls (1 connection vs 30 polls)
+   */
+  async waitForConfirmationWebSocket(
+    signature: string,
+    timeoutMs: number = 60000
+  ): Promise<{ confirmed: boolean; error?: string }> {
+    const startTime = Date.now();
+    console.log(`\n🔌 [WebSocket] Initiating connection for signature: ${signature}`);
+
+    return new Promise((resolve) => {
+      const wsUrl = this.rpcUrl.replace('https://', 'wss://');
+      let ws: WebSocket | null = null;
+      let subscriptionId: number | null = null;
+
+      const cleanup = () => {
+        if (ws) {
+          try {
+            // Unsubscribe if we have a subscription
+            if (subscriptionId !== null) {
+              ws.send(JSON.stringify({
+                jsonrpc: '2.0',
+                id: 999,
+                method: 'signatureUnsubscribe',
+                params: [subscriptionId]
+              }));
+              console.log(`🔌 [WebSocket] Unsubscribed from signature (ID: ${subscriptionId})`);
+            }
+            ws.close();
+          } catch (err) {
+            console.error('🔌 [WebSocket] Cleanup error:', err);
+          }
+        }
+      };
+
+      const timeout = setTimeout(() => {
+        const elapsed = Date.now() - startTime;
+        console.log(`⏱️  [WebSocket] Timeout after ${elapsed}ms`);
+        cleanup();
+        resolve({ confirmed: false, error: 'Confirmation timeout' });
+      }, timeoutMs);
+
+      try {
+        ws = new WebSocket(wsUrl);
+
+        ws.onopen = () => {
+          const connectTime = Date.now() - startTime;
+          console.log(`✅ [WebSocket] Connected in ${connectTime}ms`);
+
+          // Subscribe to signature notifications
+          ws!.send(JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'signatureSubscribe',
+            params: [
+              signature,
+              { commitment: 'confirmed' }
+            ]
+          }));
+          console.log(`🔌 [WebSocket] Subscription request sent for signature`);
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const response = JSON.parse(event.data);
+
+            // Handle subscription confirmation (returns subscription ID)
+            if (response.id === 1 && response.result !== undefined) {
+              subscriptionId = response.result;
+              console.log(`✅ [WebSocket] Subscribed successfully (ID: ${subscriptionId})`);
+              return;
+            }
+
+            // Handle signature notification (transaction confirmed)
+            if (response.method === 'signatureNotification') {
+              const totalTime = Date.now() - startTime;
+              console.log(`🔔 [WebSocket] Notification received after ${totalTime}ms`);
+
+              clearTimeout(timeout);
+              cleanup();
+
+              const result = response.params?.result;
+
+              if (result?.value?.err) {
+                const error = JSON.stringify(result.value.err);
+                console.log(`❌ [WebSocket] Transaction failed: ${error}`);
+                resolve({
+                  confirmed: false,
+                  error
+                });
+              } else {
+                console.log(`✅ [WebSocket] Transaction confirmed! Total time: ${totalTime}ms`);
+                resolve({ confirmed: true });
+              }
+            }
+          } catch (err) {
+            console.error('🔌 [WebSocket] Message parse error:', err);
+          }
+        };
+
+        ws.onerror = (error) => {
+          const elapsed = Date.now() - startTime;
+          console.error(`❌ [WebSocket] Error after ${elapsed}ms:`, error);
+          clearTimeout(timeout);
+          cleanup();
+          resolve({ confirmed: false, error: 'WebSocket connection failed' });
+        };
+
+        ws.onclose = (event) => {
+          const elapsed = Date.now() - startTime;
+          console.log(`🔌 [WebSocket] Connection closed after ${elapsed}ms (code: ${event.code}, reason: ${event.reason || 'none'})`);
+          clearTimeout(timeout);
+        };
+
+      } catch (err) {
+        console.error('❌ [WebSocket] Failed to create connection:', err);
+        clearTimeout(timeout);
+        resolve({ confirmed: false, error: 'Failed to create WebSocket' });
+      }
+    });
+  }
+
+  /**
    * Get recent blockhash
    */
   async getRecentBlockhash(): Promise<{

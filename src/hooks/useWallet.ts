@@ -328,16 +328,12 @@ export function useWallet() {
   }, [user, connected, connectWalletAfterAuth]);
 
   /**
-   * Auto-refresh balance on mount and periodically
+   * Auto-refresh balance on mount
+   * Note: Balance is also refreshed after successful swaps in useSwap.ts
    */
   useEffect(() => {
     if (connected) {
       refreshBalance();
-
-      // Refresh balance every 30 seconds
-      const interval = setInterval(refreshBalance, 30000);
-
-      return () => clearInterval(interval);
     }
   }, [connected, refreshBalance]);
 

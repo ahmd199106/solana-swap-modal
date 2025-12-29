@@ -110,6 +110,10 @@ describe("useSwap", () => {
       confirmed: true,
       error: undefined,
     });
+    vi.mocked(helius.waitForConfirmationWebSocket).mockResolvedValue({
+      confirmed: true,
+      error: undefined,
+    });
 
     vi.mocked(jito.shouldUseJito).mockReturnValue(true);
     // Create a proper tip instruction with required fields
@@ -474,9 +478,9 @@ describe("useSwap", () => {
       expect(jito.sendBundle).not.toHaveBeenCalled();
       expect(jito.getBundleStatus).not.toHaveBeenCalled();
 
-      // Should use Helius directly
+      // Should use Helius directly with WebSocket confirmation
       expect(mockConnection.sendRawTransaction).toHaveBeenCalled();
-      expect(helius.getTransactionStatus).toHaveBeenCalled();
+      expect(helius.waitForConfirmationWebSocket).toHaveBeenCalled();
 
       expect(useSwapStore().setStatus).toHaveBeenCalledWith("success");
     });

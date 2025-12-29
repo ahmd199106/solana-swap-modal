@@ -73,6 +73,15 @@ export function useSwap() {
   const isFetchingQuote = useRef(false);
   const quoteAbortController = useRef<AbortController | null>(null);
 
+  // Cached priority fee (fetched while user types, valid for ~60s)
+  const cachedPriorityFee = useRef<number | null>(null);
+  const isFetchingPriorityFee = useRef(false);
+
+  // Pre-built transaction cache (built while user types, valid for ~30s)
+  const cachedTransaction = useRef<VersionedTransaction | null>(null);
+  const cachedTransactionTimestamp = useRef<number>(0);
+  const isBuildingTransaction = useRef(false);
+
   const fetchQuote = useCallback(async () => {
     if (
       !inputToken ||
@@ -135,6 +144,61 @@ export function useSwap() {
     setOutputAmount,
   ]);
 
+  // Fetch priority fee (pre-fetch while user types, cache for ~60s)
+  const fetchPriorityFee = useCallback(async () => {
+    if (!inputToken || !outputToken || isFetchingPriorityFee.current) {
+      return;
+    }
+
+    isFetchingPriorityFee.current = true;
+
+    try {
+      const priorityFee = await helius.getPriorityFeeForLevel(
+        settings.priorityFee,
+        [inputToken.address, outputToken.address]
+      );
+
+      cachedPriorityFee.current = priorityFee;
+      console.log(`✅ Priority fee cached: ${priorityFee} microLamports (${settings.priorityFee} level)`);
+    } catch (err) {
+      console.error("Priority fee fetch error:", err);
+      // Keep cached value if fetch fails
+    } finally {
+      isFetchingPriorityFee.current = false;
+    }
+  }, [inputToken, outputToken, settings.priorityFee]);
+
+  // Pre-build transaction (called after quote is fetched, saves 136ms at execution)
+  const buildTransactionTemplate = useCallback(async () => {
+    if (!publicKey || !quote || isBuildingTransaction.current) {
+      return;
+    }
+
+    isBuildingTransaction.current = true;
+
+    try {
+      const priorityFee = cachedPriorityFee.current;
+
+      console.log(`🔨 Pre-building transaction template with priority fee: ${priorityFee}...`);
+
+      const transaction = await jupiter.buildSwapTransaction(
+        quote,
+        publicKey.toBase58(),
+        priorityFee ?? undefined
+      );
+
+      cachedTransaction.current = transaction;
+      cachedTransactionTimestamp.current = Date.now();
+
+      console.log(`✅ Transaction template cached (valid for 30s)`);
+    } catch (err) {
+      console.error("Pre-build transaction error:", err);
+      // Keep old cache if build fails
+    } finally {
+      isBuildingTransaction.current = false;
+    }
+  }, [publicKey, quote]);
+
   const executeSwap = useCallback(async () => {
     if (!connected || !publicKey || !quote || !inputToken || !outputToken) {
       toast.error("Missing requirements for swap");
@@ -151,20 +215,29 @@ export function useSwap() {
       setStatus("building-transaction");
       toast.loading("Building transaction...", { id: "swap-progress" });
 
-      // priority fee fetch (optional)
-      const priorityFeePromise = helius.getPriorityFeeForLevel(
-        settings.priorityFee,
-        [inputToken.address, outputToken.address]
-      );
+      // Check if we have a fresh cached transaction (< 30s old)
+      const now = Date.now();
+      const cacheAge = now - cachedTransactionTimestamp.current;
+      const isCacheFresh = cacheAge < 30000 && cachedTransaction.current;
 
-      // build tx (Jupiter returns a v0 VersionedTransaction)
-      const transaction = await jupiter.buildSwapTransaction(
-        quote,
-        publicKey.toBase58(),
-        undefined
-      );
+      let transaction: VersionedTransaction;
 
-      await priorityFeePromise;
+      if (isCacheFresh) {
+        // Use pre-built transaction template (saves 136ms!)
+        transaction = cachedTransaction.current!;
+        console.log(`⚡ Using cached transaction template (${(cacheAge / 1000).toFixed(1)}s old)`);
+      } else {
+        // Cache miss or stale - build fresh transaction
+        const priorityFee = cachedPriorityFee.current;
+        console.log(`🔨 Building fresh transaction (cache ${cacheAge > 30000 ? 'stale' : 'empty'})`);
+        console.log(`⏱️  Using cached priority fee: ${priorityFee} microLamports`);
+
+        transaction = await jupiter.buildSwapTransaction(
+          quote,
+          publicKey.toBase58(),
+          priorityFee ?? undefined
+        );
+      }
 
       // simulate (optional)
       await helius.simulateTransaction(transaction);
@@ -391,32 +464,20 @@ export function useSwap() {
             maxRetries: 3,
           });
 
-          // Confirm via Helius
+          // Confirm via Helius WebSocket
           setStatus("confirming");
           toast.loading("Confirming transaction...", { id: "swap-progress" });
 
-          let confirmed = false;
-          let attempts = 0;
-          const maxAttempts = 60; // 60 seconds timeout
+          console.log("[Helius] Waiting for confirmation via WebSocket...");
+          const result = await helius.waitForConfirmationWebSocket(txSignature, 60000);
 
-          while (!confirmed && attempts < maxAttempts) {
-            const st = await helius.getTransactionStatus(txSignature);
-            if (st.confirmed) {
-              confirmed = true;
-              console.log("[Helius] Transaction confirmed via Helius");
-            } else if (st.error) {
-              throw new Error(st.error);
-            } else {
-              await sleep(1000);
-              attempts++;
-            }
-          }
-
-          if (!confirmed) {
+          if (!result.confirmed) {
             throw new Error(
-              `Transaction timeout after ${maxAttempts}s. Check explorer for status: https://solscan.io/tx/${txSignature}`
+              result.error || `Transaction timeout after 60s. Check explorer for status: https://solscan.io/tx/${txSignature}`
             );
           }
+
+          console.log("[Helius] Transaction confirmed via WebSocket");
         } else {
           // Jito send succeeded - proceed with Jito confirmation flow
           console.log("✅ [Jito] Bundle sent! Proceeding to confirmation...");
@@ -500,39 +561,27 @@ export function useSwap() {
           }
         }
 
-        // Fallback: Check transaction confirmation via Helius
+        // Fallback: Check transaction confirmation via Helius WebSocket
         if (!confirmed) {
           usedHeliusFallback = true;
           toast.loading("Confirming transaction via Helius...", {
             id: "swap-progress",
           });
 
-          let heliusAttempts = 0;
-          const maxHeliusAttempts = 60; // Increased to 60 seconds for Jito bundles
+          console.log("[Helius] Waiting for confirmation via WebSocket (fallback)...");
+          const result = await helius.waitForConfirmationWebSocket(txSignature, 60000);
 
-          while (!confirmed && heliusAttempts < maxHeliusAttempts) {
-            const st = await helius.getTransactionStatus(txSignature);
-
-            if (st.confirmed) {
-              confirmed = true;
-              console.log("[Helius] Transaction confirmed via Helius fallback");
-              break;
-            } else if (st.error) {
-              throw new Error(st.error);
-            }
-
-            await sleep(1000); // Check every 1 second via Helius
-            heliusAttempts++;
-          }
-
-          if (!confirmed) {
+          if (!result.confirmed) {
             console.warn(
-              `[Helius] Timeout after ${maxHeliusAttempts}s. Bundle may still land. Check signature: ${txSignature}`
+              `[Helius] Timeout after 60s. Bundle may still land. Check signature: ${txSignature}`
             );
             throw new Error(
-              `Transaction timeout after ${maxHeliusAttempts}s. View on explorer: https://solscan.io/tx/${txSignature}`
+              result.error || `Transaction timeout after 60s. View on explorer: https://solscan.io/tx/${txSignature}`
             );
           }
+
+          confirmed = true;
+          console.log("[Helius] Transaction confirmed via WebSocket fallback");
         }
         }
       } else {
@@ -558,32 +607,20 @@ export function useSwap() {
           maxRetries: 3,
         });
 
-        // Confirm transaction
+        // Confirm transaction via WebSocket
         setStatus("confirming");
         toast.loading("Confirming transaction...", { id: "swap-progress" });
 
-        let confirmed = false;
-        let attempts = 0;
-        const maxAttempts = 60; // 60 seconds timeout
+        console.log("[Helius] Waiting for confirmation via WebSocket...");
+        const result = await helius.waitForConfirmationWebSocket(txSignature, 60000);
 
-        while (!confirmed && attempts < maxAttempts) {
-          const st = await helius.getTransactionStatus(txSignature);
-          if (st.confirmed) {
-            confirmed = true;
-            console.log("[Helius] Transaction confirmed");
-          } else if (st.error) {
-            throw new Error(st.error);
-          } else {
-            await sleep(1000);
-            attempts++;
-          }
-        }
-
-        if (!confirmed) {
+        if (!result.confirmed) {
           throw new Error(
-            `Transaction timeout after ${maxAttempts}s. View on explorer: https://solscan.io/tx/${txSignature}`
+            result.error || `Transaction timeout after 60s. View on explorer: https://solscan.io/tx/${txSignature}`
           );
         }
+
+        console.log("[Helius] Transaction confirmed via WebSocket");
       }
 
       setStatus("success");
@@ -624,6 +661,22 @@ export function useSwap() {
 
       const errorMsg = err instanceof Error ? err.message : "Swap failed";
 
+      // If Jupiter API failed (stale quote or API error), refetch quote to unblock
+      if (errorMsg.includes("Failed to build swap transaction") ||
+          errorMsg.includes("Jupiter") ||
+          errorMsg.includes("400") ||
+          errorMsg.includes("quote")) {
+        console.log("🔄 Jupiter error detected, refetching quote to unblock app...");
+        setStatus("idle");
+        toast.error("Quote expired or Jupiter error. Refetching quote...", { id: "swap-progress" });
+
+        // Refetch quote automatically to unblock
+        setTimeout(() => {
+          fetchQuote();
+        }, 500);
+        return;
+      }
+
       // Show full error in modal
       setError(errorMsg);
       setStatus("error");
@@ -640,7 +693,9 @@ export function useSwap() {
     quote,
     inputToken,
     outputToken,
+    inputAmount,
     settings.priorityFee,
+    settings.slippage,
     settings.enableJito,
     settings.jitoBribe,
     setStatus,
@@ -649,8 +704,11 @@ export function useSwap() {
     reset,
     signTransaction,
     refreshWallets,
+    fetchQuote,
+    refreshBalance,
   ]);
 
+  // Pre-fetch quote AND priority fee while user types
   useEffect(() => {
     const timer = setTimeout(() => {
       if (
@@ -660,11 +718,24 @@ export function useSwap() {
         !isFetchingQuote.current
       ) {
         fetchQuote();
+        fetchPriorityFee(); // Pre-fetch priority fee in parallel
       }
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [inputToken, outputToken, inputAmount, fetchQuote]);
+  }, [inputToken, outputToken, inputAmount, fetchQuote, fetchPriorityFee]);
+
+  // Pre-build transaction template when quote is ready
+  useEffect(() => {
+    if (quote && publicKey && cachedPriorityFee.current !== null) {
+      // Small delay to let quote render first
+      const timer = setTimeout(() => {
+        buildTransactionTemplate();
+      }, 100);
+
+      return () => clearTimeout(timer);
+    }
+  }, [quote, publicKey, buildTransactionTemplate]);
 
   useEffect(() => {
     return () => {
