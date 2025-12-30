@@ -60,19 +60,22 @@ export function SwapModal({ open, onClose }: SwapModalProps) {
     swapTokens
   } = useSwapStore();
 
-  // Initialize tokens on mount and update SOL balance
+  // Initialize tokens on mount and update balances
   useEffect(() => {
     if (!inputToken) {
       setInputToken({ ...POPULAR_TOKENS[0], balance }); // SOL with balance
     } else if (inputToken.symbol === "SOL" && inputToken.balance !== balance) {
       // Update SOL balance when it changes
       setInputToken({ ...inputToken, balance });
+    } else if (inputToken.symbol === "USDC" && inputToken.balance !== usdcBalance) {
+      // Update USDC balance when it changes
+      setInputToken({ ...inputToken, balance: usdcBalance });
     }
 
     if (!outputToken) {
       setOutputToken(POPULAR_TOKENS[1]); // USDC
     }
-  }, [inputToken, outputToken, setInputToken, setOutputToken, balance]);
+  }, [inputToken, outputToken, setInputToken, setOutputToken, balance, usdcBalance]);
 
   const handleInputChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -189,7 +192,13 @@ export function SwapModal({ open, onClose }: SwapModalProps) {
               <span className="text-sm text-gray-600">You pay</span>
               {inputToken && inputToken.balance !== undefined && (
                 <button
-                  onClick={() => setInputAmount(inputToken.balance!.toString())}
+                  onClick={() => {
+                    // For SOL, leave 0.001 for fees; for other tokens, use full balance
+                    const maxBalance = inputToken.symbol === "SOL"
+                      ? Math.max(0, inputToken.balance! - 0.001)
+                      : inputToken.balance!;
+                    setInputAmount(maxBalance.toString());
+                  }}
                   className="text-sm text-blue-600 hover:text-blue-700"
                 >
                   Max: {formatNumber(inputToken.balance, 4)}

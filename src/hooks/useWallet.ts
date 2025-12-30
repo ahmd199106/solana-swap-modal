@@ -349,7 +349,8 @@ export function useWallet() {
     if (connected) {
       refreshBalance();
     }
-  }, [connected, refreshBalance]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connected]); // Only refresh when connected changes, not when refreshBalance is recreated
 
   return {
     connected,

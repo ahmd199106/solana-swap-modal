@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 import { SwapModal } from "@/components/modals/SwapModal";
+import { TransferModal } from "@/components/modals/TransferModal";
 import { useWallet } from "@/hooks/useWallet";
 
 export default function Home() {
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSwapModalOpen, setIsSwapModalOpen] = useState(false);
+  const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
   const { connected, address, disconnect } = useWallet();
 
   return (
@@ -15,7 +17,7 @@ export default function Home() {
           Solana Swap Modal
         </h1>
         <p className="text-center mb-8 text-gray-600">
-          Lightning-fast token swaps powered by Jupiter, Turnkey, and Helius
+          Lightning-fast token swaps and transfers powered by Jupiter, Turnkey, and Helius
         </p>
 
         {/* Wallet Status */}
@@ -28,12 +30,19 @@ export default function Home() {
         )}
 
         {/* Action Buttons */}
-        <div className="flex justify-center gap-4">
+        <div className="flex justify-center gap-4 flex-wrap">
           <button
-            onClick={() => setIsModalOpen(true)}
+            onClick={() => setIsSwapModalOpen(true)}
             className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-8 rounded-lg transition-colors"
           >
-            Open Swap Modal
+            Swap
+          </button>
+
+          <button
+            onClick={() => setIsTransferModalOpen(true)}
+            className="bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-8 rounded-lg transition-colors"
+          >
+            Transfer
           </button>
 
           {connected && (
@@ -46,7 +55,8 @@ export default function Home() {
           )}
         </div>
 
-        <SwapModal open={isModalOpen} onClose={() => setIsModalOpen(false)} />
+        <SwapModal open={isSwapModalOpen} onClose={() => setIsSwapModalOpen(false)} />
+        <TransferModal open={isTransferModalOpen} onClose={() => setIsTransferModalOpen(false)} />
       </div>
     </main>
   );
